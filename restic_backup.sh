@@ -7,9 +7,10 @@
 #############################################
 
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+ENV_FILE="${1:-.env}"
 
 # Configuration
-source $(dirname $0)/.env
+source $(dirname $0)/$ENV_FILE
 
 # Ensure PATH includes common binary locations (cron has minimal PATH)
 export PATH="${PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}"
@@ -85,7 +86,7 @@ send_slack_alert() {
                 },
                 {
                     "title": "Path to Backup",
-                    "value": "${BACKUP_DIR}",
+                    "value": "${BACKUP_DIRS}",
                     "short": false
                 }
             ],
@@ -139,7 +140,7 @@ check_repository() {
 
 # Perform the backup
 perform_backup() {
-    log_message "INFO" "Starting backup of ${BACKUP_DIR}..."
+    log_message "INFO" "Starting backup of ${BACKUP_DIRS}..."
     
     # Create backup with tags for easier identification
     local backup_output
@@ -147,7 +148,7 @@ perform_backup() {
         --verbose \
         --tag $BACKUP_TAG \
         --host $HOSTNAME \
-        "${BACKUP_DIR}" 2>&1)
+        ${BACKUP_DIRS} 2>&1)
     
     local backup_status=$?
     

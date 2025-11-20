@@ -2,6 +2,10 @@
 
 A robust, production-ready backup solution using Restic with S3 storage.
 
+## ⚠️ Important Disclaimer
+
+**USE AT YOUR OWN RISK** - This software comes with NO WARRANTY. You are solely responsible for your data. See [DISCLAIMER.md](DISCLAIMER.md) for important warnings and [LICENSE](LICENSE) for terms.
+
 ## Features
 
 - S3-compatible storage (AWS S3, Backblaze B2, MinIO)
@@ -23,8 +27,8 @@ A robust, production-ready backup solution using Restic with S3 storage.
 
 ```bash
 # Clone the repository
-git clone https://github.com/NexGenCloud/restic-backup.git
-cd restic-backup
+git clone https://github.com/NexGenCloud/restic_backup.git
+cd restic_backup
 chmod 755 restic_backup.sh
 ```
 
@@ -91,7 +95,7 @@ export LOG_FILE="/var/log/restic-backup.log"
 export LOCKFILE="/var/run/restic-backup-cron.lock"
 
 # Optional BUT USEFUL IF RUNNING IN DOCKER, override hostname
-HOSTNAME=yourhostname
+export HOSTNAME=yourhostname
 ```
 
 ### 4. Test Your Configuration
@@ -359,3 +363,4 @@ Pull requests welcome! Please test your changes thoroughly and update documentat
 - Slack notifications
 - Automatic retention management
 - Cron integration
+

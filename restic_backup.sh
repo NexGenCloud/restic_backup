@@ -1,16 +1,114 @@
 #!/bin/bash
-
-#############################################
-# Restic Backup Script with S3 and Slack
-# Executes hourly backups with retention policy
-# Sends alerts to Slack on failure if SLACK_WEBHOOK_URL is set
-#############################################
+# Restic Backup Script
+# Copyright (c) 2024 - Fernando San - Nexgen Cloud
+# Licensed under MIT License - see LICENSE file
+# 
+# DISCLAIMER: This software is provided AS IS with NO WARRANTY.
+# You are solely responsible for testing and data protection.
+# See DISCLAIMER file for full terms.
 
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${1:-.env}"
+CONFIG_FILE="${SCRIPT_DIR}/${ENV_FILE}"
+
+if [ ! -f "${CONFIG_FILE}" ]; then
+    echo "Configuration file '${CONFIG_FILE}' not found" >&2
+    exit 1
+fi
 
 # Configuration
-source $(dirname $0)/$ENV_FILE
+source "${CONFIG_FILE}"
+
+# Defaults for optional settings
+DEFAULT_LOG_FILE="${SCRIPT_DIR}/restic_backup.log"
+DEFAULT_LOCKFILE="${SCRIPT_DIR}/restic-backup.lock"
+LOG_FILE="${LOG_FILE:-${DEFAULT_LOG_FILE}}"
+LOCKFILE="${LOCKFILE:-/var/run/restic-backup.lock}"
+KEEP_HOURLY="${KEEP_HOURLY:-24}"
+KEEP_DAILY="${KEEP_DAILY:-7}"
+KEEP_WEEKLY="${KEEP_WEEKLY:-4}"
+KEEP_MONTHLY="${KEEP_MONTHLY:-6}"
+KEEP_YEARLY="${KEEP_YEARLY:-2}"
+CHECK_PERCENTAGE="${CHECK_PERCENTAGE:-10%}"
+
+prepare_file_target() {
+    local path="$1"
+    local fallback="$2"
+
+    local dir
+    dir="$(dirname "${path}")"
+
+    if ! mkdir -p "${dir}" 2>/dev/null; then
+        echo "Cannot create directory '${dir}', falling back to '${fallback}'" >&2
+        echo "${fallback}"
+        return 0
+    fi
+
+    if ! touch "${path}" 2>/dev/null; then
+        echo "Cannot write to '${path}', falling back to '${fallback}'" >&2
+        mkdir -p "$(dirname "${fallback}")" 2>/dev/null || true
+        if ! touch "${fallback}" 2>/dev/null; then
+            echo "Cannot write to fallback '${fallback}'. Please adjust permissions." >&2
+            exit 1
+        fi
+        echo "${fallback}"
+        return 0
+    fi
+
+    echo "${path}"
+}
+
+# Ensure log file path is writable, fallback to script directory if needed
+LOG_FILE="$(prepare_file_target "${LOG_FILE}" "${DEFAULT_LOG_FILE}")"
+
+# Ensure lock file lives in a writable directory, fallback to script directory if needed
+LOCKFILE_DIR="$(dirname "${LOCKFILE}")"
+if ! mkdir -p "${LOCKFILE_DIR}" 2>/dev/null; then
+    echo "Cannot create lock directory '${LOCKFILE_DIR}', using fallback '${DEFAULT_LOCKFILE}'" >&2
+    LOCKFILE="${DEFAULT_LOCKFILE}"
+    LOCKFILE_DIR="$(dirname "${LOCKFILE}")"
+    mkdir -p "${LOCKFILE_DIR}" 2>/dev/null || true
+fi
+
+ensure_lockfile_target() {
+    local target="$1"
+    local fallback="$2"
+
+    if [ ! -e "${target}" ]; then
+        if touch "${target}" 2>/dev/null; then
+            echo "${target}"
+            return 0
+        fi
+    elif [ -w "${target}" ]; then
+        echo "${target}"
+        return 0
+    fi
+
+    echo "Cannot write to lock file '${target}', using fallback '${fallback}'" >&2
+    mkdir -p "$(dirname "${fallback}")" 2>/dev/null || true
+    if ! touch "${fallback}" 2>/dev/null; then
+        echo "Cannot prepare fallback lock file '${fallback}'. Please adjust permissions." >&2
+        exit 1
+    fi
+    echo "${fallback}"
+}
+
+LOCKFILE="$(ensure_lockfile_target "${LOCKFILE}" "${DEFAULT_LOCKFILE}")"
+
+validate_required() {
+    local value="$1"
+    local message="$2"
+
+    if [ -z "${value}" ]; then
+        echo "${message}" >&2
+        exit 1
+    fi
+}
+
+validate_required "${RESTIC_REPOSITORY}" "RESTIC_REPOSITORY must be set in the configuration."
+validate_required "${BACKUP_DIRS}" "BACKUP_DIRS must be set in the configuration."
+BACKUP_TAG="${BACKUP_TAG:-default-backup}"
 
 # Ensure PATH includes common binary locations (cron has minimal PATH)
 export PATH="${PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}"
@@ -237,7 +335,6 @@ main() {
     log_message "INFO" "=== Starting Restic Backup Job ==="
     
     # Check if another instance is running
-    LOCKFILE="/var/run/restic-backup.lock"
     if [ -f "${LOCKFILE}" ]; then
         PID=$(cat "${LOCKFILE}")
         if ps -p ${PID} > /dev/null 2>&1; then
